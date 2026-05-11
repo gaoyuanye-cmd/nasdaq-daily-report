@@ -33,7 +33,7 @@ def fetch_financial_data() -> Dict[str, Any]:
     for ticker, name in WATCHLIST.items():
         try:
             stock = yf.Ticker(ticker)
-            hist = stock.history(period="2d")  # 获取最近两天数据
+            hist = stock.history(period="2d")
             if len(hist) >= 2:
                 current = hist['Close'].iloc[-1]
                 prev = hist['Close'].iloc[-2]
@@ -83,7 +83,13 @@ def generate_ai_analysis(data: Dict[str, Any]) -> str:
     # 格式化数据
     data_lines = []
     for name, info in data.items():
-        data_lines.append(f"- {name}：{info['price']}，涨跌幅 {info['change_pct']:+}%")
+        price = info['price']
+        change_val = info['change_pct']
+        if isinstance(change_val, (int, float)):
+            change_str = f"{change_val:+.2f}%"
+        else:
+            change_str = str(change_val)
+        data_lines.append(f"- {name}：{price}，涨跌幅 {change_str}")
     data_text = "\n".join(data_lines)
 
     prompt = f"""
@@ -102,12 +108,9 @@ def generate_ai_analysis(data: Dict[str, Any]) -> str:
     return call_deepseek(prompt)
 
 # ========== 推送模块 ==========
-
-# 企业微信机器人（推荐）
 def send_to_wework(webhook_url: str, content: str) -> bool:
     """发送 Markdown 格式消息到企业微信群"""
     headers = {"Content-Type": "application/json"}
-    # 超过 4096 字符需截断
     truncated = content[:4000] + "..." if len(content) > 4000 else content
     payload = {
         "msgtype": "markdown",
@@ -120,7 +123,6 @@ def send_to_wework(webhook_url: str, content: str) -> bool:
         print(f"企业微信发送失败：{e}")
         return False
 
-# 钉钉机器人
 def send_to_dingtalk(webhook_url: str, content: str) -> bool:
     """发送消息到钉钉群"""
     headers = {"Content-Type": "application/json"}
@@ -158,14 +160,17 @@ def main():
     report = f"# 📊 纳指监控日报\n\n**日期**：{today}\n\n"
     report += "## 📈 市场数据\n\n"
     for name, info in data.items():
-        change_str = f"+{info['change_pct']}%" if info['change_pct'] >= 0 else f"{info['change_pct']}%"
-        emoji = "🟢" if info['change_pct'] >= 0 else "🔴"
+        change_val = info['change_pct']
+        if isinstance(change_val, (int, float)):
+            change_str = f"+{change_val}%" if change_val >= 0 else f"{change_val}%"
+        else:
+            change_str = str(change_val)
+        emoji = "🟢" if (isinstance(change_val, (int, float)) and change_val >= 0) else "🔴"
         report += f"- {emoji} **{name}**：{info['price']}（{change_str}）\n"
     report += f"\n## 🤖 AI 分析\n\n{analysis}\n\n"
     report += "---\n*报告由 AI 生成，仅供参考，不构成任何投资建议。*"
     
     # 4. 推送
-    # WEWORK_WEBHOOK 和 DINGTALK_WEBHOOK 从环境变量读取
     wework_url = os.environ.get("WEWORK_WEBHOOK", "")
     dingtalk_url = os.environ.get("DINGTALK_WEBHOOK", "")
     
